@@ -1,83 +1,77 @@
-const fs = require('fs-extra');
+const { spawn } = require("child_process");
+const axios = require("axios");
+const logger = require("./utils/log");
+
+///////////////////////////////////////////////////////////
+//========= Create website for dashboard/uptime =========//
+///////////////////////////////////////////////////////////
+
+const express = require('express');
 const path = require('path');
 
-const configPath = path.join(__dirname, 'config.json');
-const appstatePath = path.join(__dirname, 'appstate.json');
+const app = express();
+const port = process.env.PORT || 8080;
 
-let botModule = null;
-let botStarted = false;
+// Serve the index.html file
+app.get('/', function (req, res) {
+    res.sendFile(path.join(__dirname, '/index.html'));
+});
 
-const BRAND_NAME = "SARDAR RDX";
-const BRAND_WHATSAPP = "+923301068874";
-const BRAND_EMAIL = "sardarrdx@gmail.com";
-
-function getConfig() {
-  try {
-    return fs.readJsonSync(configPath);
-  } catch {
-    return {
-      BOTNAME: 'SARDAR RDX',
-      PREFIX: '.',
-      ADMINBOT: ['100009012838085'],
-      TIMEZONE: 'Asia/Karachi',
-      PREFIX_ENABLED: true,
-      REACT_DELETE_EMOJI: '😡',
-      ADMIN_ONLY_MODE: false,
-      AUTO_ISLAMIC_POST: true,
-      AUTO_GROUP_MESSAGE: true,
-      APPROVE_ONLY: false
-    };
-  }
-}
-
-function saveConfig(config) {
-  fs.writeJsonSync(configPath, config, { spaces: 2 });
-}
-
-function getAppstate() {
-  try {
-    return fs.readJsonSync(appstatePath);
-  } catch {
-    return null;
-  }
-}
-
-function saveAppstate(appstate) {
-  fs.writeJsonSync(appstatePath, appstate, { spaces: 2 });
-}
-
-// Start bot
-async function startBot() {
-  try {
-    if (!fs.existsSync(appstatePath)) {
-      console.log('❌ AppState not found. Please add appstate.json to start the bot.');
-      return;
+// Start the server and add error handling
+app.listen(port, () => {
+    logger(`Server is running on port ${port}...`, "[ Starting ]");
+}).on('error', (err) => {
+    if (err.code === 'EACCES') {
+        logger(`Permission denied. Cannot bind to port ${port}.`, "[ Error ]");
+    } else {
+        logger(`Server error: ${err.message}`, "[ Error ]");
     }
-    
-    console.log(`\n╔═══════════════════════════════════════════════════╗`);
-    console.log(`║  ██████╗ ██████╗ ██╗  ██╗    ██████╗  ██████╗ ████████╗║`);
-    console.log(`║  ██╔══██╗██╔══██╗╚██╗██╔╝    ██╔══██╗██╔═══██╗╚══██╔══╝║`);
-    console.log(`║  ██████╔╝██║  ██║ ╚███╔╝     ██████╔╝██║   ██║   ██║   ║`);
-    console.log(`║  ██╔══██╗██║  ██║ ██╔██╗     ██╔══██╗██║   ██║   ██║   ║`);
-    console.log(`║  ██║  ██║██████╔╝██╔╝ ██╗    ██████╔╝╚██████╔╝   ██║   ║`);
-    console.log(`║  ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝    ╚═════╝  ╚═════╝    ╚═╝   ║`);
-    console.log(`╠═══════════════════════════════════════════════════╣`);
-    console.log(`║ WhatsApp: ${BRAND_WHATSAPP}                           ║`);
-    console.log(`║ Email: ${BRAND_EMAIL}                      ║`);
-    console.log(`╚═══════════════════════════════════════════════════╝\n`);
-    
-    console.log('[BOT] Starting SARDAR RDX...');
-    
-    botModule = require('./rdx');
-    botModule.startBot();
-    botStarted = true;
-    
-    console.log('[BOT] SARDAR RDX is now online! 🚀');
-  } catch (error) {
-    console.error('❌ Error starting bot:', error.message);
-    process.exit(1);
-  }
-}
+});
 
-// Start the bot immediately
+/////////////////////////////////////////////////////////
+//========= Create start bot and make it loop =========//
+/////////////////////////////////////////////////////////
+
+// Initialize global restart counter
+global.countRestart = global.countRestart || 0;
+
+function startBot(message) {
+    if (message) logger(message, "[ Starting ]");
+
+    const child = spawn("node", ["--trace-warnings", "--async-stack-traces", "Priyansh.js"], {
+        cwd: __dirname,
+        stdio: "inherit",
+        shell: true
+    });
+
+    child.on("close", (codeExit) => {
+        if (codeExit !== 0 && global.countRestart < 5) {
+            global.countRestart += 1;
+            logger(`Bot exited with code ${codeExit}. Restarting... (${global.countRestart}/5)`, "[ Restarting ]");
+            startBot();
+        } else {
+            logger(`Bot stopped after ${global.countRestart} restarts.`, "[ Stopped ]");
+        }
+    });
+
+    child.on("error", (error) => {
+        logger(`An error occurred: ${JSON.stringify(error)}`, "[ Error ]");
+    });
+};
+
+////////////////////////////////////////////////
+//========= Check update from Github =========//
+////////////////////////////////////////////////
+
+axios.get("https://raw.githubusercontent.com/priyanshu192/bot/main/package.json")
+    .then((res) => {
+        logger(res.data.name, "[ NAME ]");
+        logger(`Version: ${res.data.version}`, "[ VERSION ]");
+        logger(res.data.description, "[ DESCRIPTION ]");
+    })
+    .catch((err) => {
+        logger(`Failed to fetch update info: ${err.message}`, "[ Update Error ]");
+    });
+
+// Start the bot
 startBot();
